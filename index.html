@@ -22,7 +22,7 @@
       </div>
       <div>
         <label class="font-semibold">Paper Timeslots</label>
-        <textarea id="timeslots" class="w-full border p-2 h-40" placeholder="Format: YYYY-MM-DD HH:MM (start time only)&#10;e.g. 2025-10-05 09:00"></textarea>
+        <textarea id="timeslots" class="w-full border p-2 h-40" placeholder="Format: dd-mm-yyyy HHMM&#10;e.g. 05-10-2025 0900"></textarea>
       </div>
     </div>
 
@@ -72,20 +72,24 @@
 const $ = id => document.getElementById(id);
 function parseLines(id){ return $(id).value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean); }
 
-// Safe datetime parsing
+// Parse dd-mm-yyyy HHMM into Date
 function parseDateTime(str){
   let [date,time]=str.split(" ");
-  if(!time) time="00:00";
-  const [y,m,d]=date.split("-").map(Number);
-  const [hh,mm]=time.split(":").map(Number);
+  if(!time) time="0000";
+  const [d,m,y]=date.split("-").map(Number);
+  const hh=parseInt(time.substring(0,2),10);
+  const mm=parseInt(time.substring(2,4),10);
   return new Date(y,m-1,d,hh,mm);
 }
+
+// Format Date -> dd-mm-yyyy and HHMM
 function formatDateTime(d){
   const pad=n=>String(n).padStart(2,"0");
-  const date=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  const time=`${pad(d.getHours())}${pad(d.getMinutes())}`; // No colon
+  const date=`${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()}`;
+  const time=`${pad(d.getHours())}${pad(d.getMinutes())}`;
   return {date,time};
 }
+
 function addMinutes(timeStr,mins){
   const d=parseDateTime(timeStr);
   d.setMinutes(d.getMinutes()+mins);
@@ -96,7 +100,7 @@ function addMinutes(timeStr,mins){
 function loadSample(){
   $('invigilators').value=['Alice','Bob','Chen','Deepa','Evan'].join('\n');
   $('rooms').value=['Hall A','Hall B'].join('\n');
-  $('timeslots').value=['2025-10-05 09:00','2025-10-06 14:00'].join('\n');
+  $('timeslots').value=['05-10-2025 0900','06-10-2025 1430'].join('\n');
 }
 $('sampleBtn').addEventListener('click',loadSample);
 
