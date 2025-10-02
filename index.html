@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Invigilation Timetable Generator (with Shifts)</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.2/dist/xlsx.full.min.js"></script>
+
+  <style>
+    .cell-editable { cursor: pointer; }
+    .table-fixed td, .table-fixed th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="max-w-7xl mx-auto p-6">
+    <h1 class="text-2xl font-semibold mb-4">Invigilation Timetable Generator</h1>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      <!-- Inputs -->
+      <section class="bg-white p-4 rounded shadow">
+        <h2 class="font-medium mb-2">Input lists</h2>
+
+        <label class="block mb-2 text-sm">Invigilators (one per line)</label>
+        <textarea id="invigilators" rows="6" class="w-full border rounded p-2 mb-3"></textarea>
+
+        <label class="block mb-2 text-sm">Rooms (one per line)</label>
+        <textarea id="rooms" rows="3" class="w-full border rounded p-2 mb-3"></textarea>
+
+        <label class="block mb-2 text-sm">Timeslots (start times, e.g. 2025-10-05 09:00)</label>
+        <textarea id="timeslots" rows="4" class="w-full border rounded p-2 mb-3"></textarea>
+
+        <label class="block mb-2 text-sm">Paper duration (minutes)</label>
+        <input id="paperDuration" type="number" value="180" class="w-full border rounded p-2 mb-3">
+
+        <label class="block mb-2 text-sm">Invigilator shift length (minutes)</label>
+        <input id="shiftLength" type="number" value="90" class="w-full border rounded p-2 mb-3">
+
+        <div class="flex gap-2">
+          <button id="sampleBtn" class="bg-sky-600 text-white px-3 py-1 rounded">Load sample</button>
+          <button id="generateBtn" class="bg-emerald-600 text-white px-3 py-1 rounded">Generate</button>
+        </div>
+      </section>
+
+      <!-- Options -->
+      <section class="bg-white p-4 rounded shadow">
+        <h2 class="font-medium mb-2">Options</h2>
+        <label class="flex items-center gap-2 mb-3">
+          <input id="avoidConsecutive" type="checkbox" checked>
+          <span class="text-sm">Avoid consecutive assignments</span>
+        </label>
+        <label class="block mb-3 text-sm">
+          Max assignments per invigilator
+          <input id="maxPerInvigilator" type="number" class="w-full border rounded p-2 mt-1">
+        </label>
+        <div>
+          <button id="balanceBtn" class="bg-indigo-600 text-white px-3 py-1 rounded">Show counts</button>
+        </div>
+        <div id="countsArea" class="mt-3 text-sm text-slate-700"></div>
+      </section>
+
+      <!-- Output -->
+      <section class="bg-white p-4 rounded shadow">
+        <h2 class="font-medium mb-2">Preview & Export</h2>
+        <div class="flex gap-2 mb-3">
+          <button id="exportBtn" class="bg-amber-600 text-white px-3 py-1 rounded">Export Excel</button>
+          <button id="downloadCSVBtn" class="bg-emerald-500 text-white px-3 py-1 rounded">Download CSV</button>
+        </div>
+        <div id="tableWrap" class="overflow-auto border rounded p-2 max-h-[60vh]">
+          <table id="timetable" class="min-w-full table-fixed text-sm"></table>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+function parseLines(id){ return $(id).value.split(/\\r?\\n/).map(s=>s.trim()).filter(Boolean); }
+
+function loadSample(){
+  $('invigilators').value = ['Alice','Bob','Chen','Deepa','Evan'].join('\\n');
+  $('rooms').value = ['Hall A','Hall B'].join('\\n');
+  $('timeslots').value = ['2025-10-05 09:00','2025-10-06 14:00'].join('\\n');
+}
+$('sampleBtn').addEventListener('click',loadSample);
+
+function addMinutes(timeStr, mins){
+  const d = new Date(timeStr);
+  d.setMinutes(d.getMinutes()+mins);
+  return d.toISOString().slice(0,16).replace('T',' ');
+}
+
+function generateTimetable(){
+  const invigilators = parseLines('invigilators');
+  const rooms = parseLines('rooms');
+  const slots = parseLines('timeslots');
+  const paperDur = parseInt($('paperDuration').value)||180;
+  const shiftLen = parseInt($('shiftLength').value)||90;
+  const avoidConsec = $('avoidConsecutive').checked;
+  const maxPer = parseInt($('maxPerInvigilator').value)||Infinity;
+  if(!invigilators.length||!rooms.length||!slots.length) return alert('Fill all lists.');
+
+  let shifts = [];
+  for(const slot of slots){
+    let start = slot;
+    let used = 0;
+    while(used<paperDur){
+      let end = addMinutes(start, Math.min(shiftLen,paperDur-used));
+      shifts.push(`${start} – ${end}`);
+      start = end;
+      used+=shiftLen;
+    }
+  }
+
+  // assignment
+  let counts = {}; invigilators.forEach(i=>counts[i]=0);
+  let table = shifts.map(()=>rooms.map(()=>''));  
+  let pointer=0;
+  for(let s=0;s<shifts.length;s++){
+    for(let r=0;r<rooms.length;r++){
+      let chosen=null;
+      for(let k=0;k<invigilators.length;k++){
+        let cand=invigilators[(pointer+k)%invigilators.length];
+        if(counts[cand]>=maxPer) continue;
+        if(avoidConsec && s>0){
+          if(table[s-1].includes(cand)) continue;
+        }
+        chosen=cand; break;
+      }
+      if(!chosen) chosen=invigilators[pointer%invigilators.length];
+      table[s][r]=chosen;
+      counts[chosen]++;
+      pointer++;
+    }
+  }
+  renderTable(shifts,rooms,table);
+  window.lastGenerated={shifts,rooms,table,counts};
+}
+
+$('generateBtn').addEventListener('click',generateTimetable);
+
+function renderTable(shifts,rooms,table){
+  const tbl=$('timetable'); tbl.innerHTML='';
+  let head='<tr><th class="border px-2 py-1">Shift / Room</th>';
+  for(const r of rooms) head+=`<th class="border px-2 py-1">${r}</th>`;
+  head+='</tr>'; tbl.innerHTML=head;
+  for(let i=0;i<shifts.length;i++){
+    let row=`<tr><th class="border px-2 py-1">${shifts[i]}</th>`;
+    for(let j=0;j<rooms.length;j++){
+      row+=`<td class="border px-2 py-1">${table[i][j]}</td>`;
+    }
+    row+='</tr>'; tbl.innerHTML+=row;
+  }
+}
+
+$('balanceBtn').addEventListener('click',()=>{
+  if(!window.lastGenerated) return;
+  let c=window.lastGenerated.counts;
+  $('countsArea').innerHTML=Object.entries(c).map(([k,v])=>`${k}: ${v}`).join('<br>');
+});
+
+$('exportBtn').addEventListener('click',()=>{
+  if(!window.lastGenerated) return;
+  const {shifts,rooms,table}=window.lastGenerated;
+  const wsData=[['Shift / Room',...rooms]];
+  for(let i=0;i<shifts.length;i++) wsData.push([shifts[i],...table[i]]);
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(wsData);
+  XLSX.utils.book_append_sheet(wb,ws,'Invigilation');
+  XLSX.writeFile(wb,'invigilation.xlsx');
+});
+
+$('downloadCSVBtn').addEventListener('click',()=>{
+  if(!window.lastGenerated) return;
+  const {shifts,rooms,table}=window.lastGenerated;
+  let lines=[['Shift / Room',...rooms].join(',')];
+  for(let i=0;i<shifts.length;i++){
+    lines.push([shifts[i],...table[i]].join(','));
+  }
+  const blob=new Blob([lines.join('\\n')],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='invigilation.csv';
+  a.click(); URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
