@@ -82,12 +82,14 @@ function parseDateTime(str){
 }
 function formatDateTime(d){
   const pad=n=>String(n).padStart(2,"0");
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const date=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const time=`${pad(d.getHours())}${pad(d.getMinutes())}`; // No colon
+  return {date,time};
 }
 function addMinutes(timeStr,mins){
   const d=parseDateTime(timeStr);
   d.setMinutes(d.getMinutes()+mins);
-  return formatDateTime(d);
+  return d;
 }
 
 // Sample Data
@@ -112,11 +114,14 @@ function generateTimetable(){
   // Generate shifts
   let shifts=[];
   for(const slot of slots){
-    let start=slot;
+    let start=parseDateTime(slot);
     let used=0;
     while(used<paperDur){
-      let end=addMinutes(start,Math.min(shiftLen,paperDur-used));
-      shifts.push(`${start} – ${end}`);
+      let end=new Date(start.getTime());
+      end.setMinutes(end.getMinutes()+Math.min(shiftLen,paperDur-used));
+      let {date:ds,time:ts}=formatDateTime(start);
+      let {time:te}=formatDateTime(end);
+      shifts.push({date:ds,range:`${ts}–${te}`});
       start=end;
       used+=shiftLen;
     }
@@ -151,12 +156,12 @@ $('generateBtn').addEventListener('click',generateTimetable);
 // Render Table
 function renderTable(shifts,rooms,table){
   const tbl=$('timetable'); tbl.innerHTML='';
-  let thead='<tr><th class="border px-2 py-1 bg-slate-100">Shift / Room</th>';
+  let thead='<tr><th class="border px-2 py-1 bg-slate-100">Date</th><th class="border px-2 py-1 bg-slate-100">Shift</th>';
   for(const r of rooms) thead+=`<th class="border px-2 py-1 bg-slate-100">${r}</th>`;
   thead+='</tr>';
   tbl.innerHTML=thead;
   for(let i=0;i<shifts.length;i++){
-    let row=`<tr><th class="border px-2 py-1">${shifts[i]}</th>`;
+    let row=`<tr><td class="border px-2 py-1">${shifts[i].date}</td><td class="border px-2 py-1">${shifts[i].range}</td>`;
     for(let j=0;j<rooms.length;j++){
       row+=`<td class="border px-2 py-1">${table[i][j]}</td>`;
     }
@@ -176,8 +181,8 @@ $('balanceBtn').addEventListener('click',()=>{
 $('exportBtn').addEventListener('click',()=>{
   if(!window.lastGenerated) return;
   const {shifts,rooms,table}=window.lastGenerated;
-  const wsData=[['Shift / Room',...rooms]];
-  for(let i=0;i<shifts.length;i++) wsData.push([shifts[i],...table[i]]);
+  const wsData=[['Date','Shift',...rooms]];
+  for(let i=0;i<shifts.length;i++) wsData.push([shifts[i].date,shifts[i].range,...table[i]]);
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(wsData);
   XLSX.utils.book_append_sheet(wb,ws,'Invigilation');
@@ -188,8 +193,8 @@ $('exportBtn').addEventListener('click',()=>{
 $('downloadCSVBtn').addEventListener('click',()=>{
   if(!window.lastGenerated) return;
   const {shifts,rooms,table}=window.lastGenerated;
-  let lines=[['Shift / Room',...rooms].join(',')];
-  for(let i=0;i<shifts.length;i++) lines.push([shifts[i],...table[i]].join(','));
+  let lines=[['Date','Shift',...rooms].join(',')];
+  for(let i=0;i<shifts.length;i++) lines.push([shifts[i].date,shifts[i].range,...table[i]].join(','));
   const blob=new Blob([lines.join('\n')],{type:'text/csv'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download='invigilation.csv';
