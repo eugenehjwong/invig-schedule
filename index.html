@@ -1,208 +1,435 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Invigilation Timetable Generator</title>
+  <meta charset="utf-8" />
+  <title>Invigilation Timetable Generator — Full</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { background: #f3f4f6; }
+    .table-fixed td, .table-fixed th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  </style>
 </head>
-<body class="bg-gray-100 p-6">
-  <div class="max-w-5xl mx-auto bg-white shadow p-6 rounded">
-    <h1 class="text-2xl font-bold mb-4">Invigilation Timetable Generator</h1>
+<body class="p-6">
+  <div class="max-w-6xl mx-auto bg-white p-6 rounded shadow">
+    <h1 class="text-2xl font-semibold mb-3">Invigilation Timetable Generator (Full)</h1>
+    <p class="text-sm text-gray-600 mb-4">Inputs use <strong>dd-mm-yyyy HHMM</strong> (e.g. <code>05-10-2025 0900</code>). Rooms use <code>Room name,number</code> (number = invigilators per room).</p>
 
-    <!-- Input Section -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="grid md:grid-cols-3 gap-4">
       <div>
-        <label class="font-semibold">Invigilators</label>
-        <textarea id="invigilators" class="w-full border p-2 h-40" placeholder="One per line"></textarea>
+        <label class="font-medium">Invigilators (one per line)</label>
+        <textarea id="invigilators" rows="8" class="w-full border rounded p-2" placeholder="Alice\nBob\nChen"></textarea>
       </div>
+
       <div>
-        <label class="font-semibold">Rooms</label>
-        <textarea id="rooms" class="w-full border p-2 h-40" placeholder="One per line"></textarea>
+        <label class="font-medium">Rooms (one per line — format: <code>Room name,number</code>)</label>
+        <textarea id="rooms" rows="8" class="w-full border rounded p-2" placeholder="Hall A,3\nHall B,2\nClass 1,1"></textarea>
+        <p class="text-xs text-gray-500 mt-1">If you omit the comma/number or enter invalid number, it defaults to <strong>1</strong>.</p>
       </div>
+
       <div>
-        <label class="font-semibold">Paper Timeslots</label>
-        <textarea id="timeslots" class="w-full border p-2 h-40" placeholder="Format: dd-mm-yyyy HHMM&#10;e.g. 05-10-2025 0900"></textarea>
+        <label class="font-medium">Paper timeslots (one per line, <code>dd-mm-yyyy HHMM</code>)</label>
+        <textarea id="timeslots" rows="8" class="w-full border rounded p-2" placeholder="05-10-2025 0900\n06-10-2025 1430"></textarea>
+        <p class="text-xs text-gray-500 mt-1">Strict format. The app validates and will warn about invalid lines.</p>
       </div>
     </div>
 
-    <!-- Options -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+    <div class="grid md:grid-cols-4 gap-4 mt-4">
       <div>
-        <label class="font-semibold">Paper Duration (minutes)</label>
-        <input id="paperDuration" type="number" value="180" class="w-full border p-2">
+        <label class="font-medium">Paper duration (minutes)</label>
+        <input id="paperDuration" type="number" value="180" class="w-full border rounded p-2">
       </div>
       <div>
-        <label class="font-semibold">Invigilator Shift Length (minutes)</label>
-        <input id="shiftLength" type="number" value="90" class="w-full border p-2">
+        <label class="font-medium">Invigilator shift length (minutes)</label>
+        <input id="shiftLength" type="number" value="90" class="w-full border rounded p-2">
       </div>
       <div>
-        <label class="font-semibold">Max Papers per Invigilator</label>
-        <input id="maxPerInvigilator" type="number" class="w-full border p-2" placeholder="Leave blank for no limit">
+        <label class="font-medium">Max papers per invigilator</label>
+        <input id="maxPerInvigilator" type="number" class="w-full border rounded p-2" placeholder="leave blank = no limit">
+      </div>
+      <div class="flex items-end">
+        <label class="flex items-center gap-2">
+          <input id="avoidConsecutive" type="checkbox" checked>
+          <span>Avoid consecutive shifts</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="flex gap-2 mt-4">
+      <button id="sampleBtn" class="px-3 py-2 bg-gray-200 rounded">Load sample</button>
+      <button id="generateBtn" class="px-3 py-2 bg-green-600 text-white rounded">Generate timetable</button>
+      <button id="balanceBtn" class="px-3 py-2 bg-indigo-600 text-white rounded">Show counts</button>
+      <button id="exportBtn" class="px-3 py-2 bg-amber-600 text-white rounded">Export Excel</button>
+      <button id="downloadCSVBtn" class="px-3 py-2 bg-yellow-500 text-white rounded">Export CSV</button>
+      <button id="clearBtn" class="px-3 py-2 bg-red-100 text-red-700 rounded">Clear preview</button>
+    </div>
+
+    <div class="mt-6">
+      <h2 class="font-semibold">Preview</h2>
+      <div id="tableWrap" class="mt-2 overflow-auto border rounded p-2 max-h-[60vh]">
+        <table id="timetable" class="min-w-full table-fixed text-sm"></table>
       </div>
     </div>
 
     <div class="mt-4">
-      <label><input type="checkbox" id="avoidConsecutive" class="mr-2">Avoid consecutive shifts</label>
+      <h2 class="font-semibold">Invigilation counts</h2>
+      <div id="countsArea" class="mt-2 p-2 border rounded bg-gray-50 text-sm"></div>
     </div>
 
-    <!-- Action Buttons -->
-    <div class="flex gap-2 mt-4">
-      <button id="sampleBtn" class="bg-gray-300 px-4 py-2 rounded">Load Sample Data</button>
-      <button id="generateBtn" class="bg-blue-500 text-white px-4 py-2 rounded">Generate Timetable</button>
-      <button id="balanceBtn" class="bg-purple-500 text-white px-4 py-2 rounded">Check Balance</button>
-      <button id="exportBtn" class="bg-green-500 text-white px-4 py-2 rounded">Export Excel</button>
-      <button id="downloadCSVBtn" class="bg-yellow-500 text-white px-4 py-2 rounded">Export CSV</button>
-    </div>
-
-    <!-- Preview -->
-    <div class="mt-6">
-      <h2 class="text-xl font-semibold">Generated Timetable Preview</h2>
-      <table id="timetable" class="table-auto border-collapse border w-full mt-2"></table>
-    </div>
-
-    <!-- Balance -->
-    <div class="mt-6">
-      <h2 class="text-xl font-semibold">Invigilation Counts</h2>
-      <div id="countsArea" class="p-2 bg-gray-50 border mt-2"></div>
+    <div class="mt-6 text-xs text-gray-500">
+      Tip: If room lines are missing the ",number" part they are treated as 1. Timeslots must be <code>dd-mm-yyyy HHMM</code>.
     </div>
   </div>
 
 <script>
+/* Full Invigilation Timetable Generator
+   - Date/time format used everywhere: dd-mm-yyyy and HHMM (no colon)
+   - Rooms input: "Room name,number" (number validated, default 1)
+   - Multiple invigilators per room per shift supported
+*/
+
 const $ = id => document.getElementById(id);
+
 function parseLines(id){ return $(id).value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean); }
 
-// Parse dd-mm-yyyy HHMM into Date
-function parseDateTime(str){
-  let [date,time]=str.split(" ");
-  if(!time) time="0000";
-  const [d,m,y]=date.split("-").map(Number);
-  const hh=parseInt(time.substring(0,2),10);
-  const mm=parseInt(time.substring(2,4),10);
-  return new Date(y,m-1,d,hh,mm);
+/* Parse dd-mm-yyyy HHMM
+   Returns Date object or null if invalid
+*/
+function parseDateTimeStrict(line){
+  // expected "dd-mm-yyyy HHMM" (with a space separator)
+  const parts = line.trim().split(/\s+/);
+  if(parts.length < 1) return null;
+  const datePart = parts[0];
+  const timePart = parts[1] || "0000";
+  const dateMatch = /^(\d{2})-(\d{2})-(\d{4})$/.exec(datePart);
+  const timeMatch = /^(\d{2})(\d{2})$/.exec(timePart);
+  if(!dateMatch || !timeMatch) return null;
+  const d = parseInt(dateMatch[1],10), m = parseInt(dateMatch[2],10), y = parseInt(dateMatch[3],10);
+  const hh = parseInt(timeMatch[1],10), mm = parseInt(timeMatch[2],10);
+  if(m < 1 || m > 12 || d < 1 || d > 31) return null;
+  if(hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  const date = new Date(y, m-1, d, hh, mm);
+  // Additional check: ensure date components match (catches invalid day for month)
+  if(date.getFullYear() !== y || date.getMonth() !== m-1 || date.getDate() !== d) return null;
+  return date;
 }
 
-// Format Date -> dd-mm-yyyy and HHMM
-function formatDateTime(d){
-  const pad=n=>String(n).padStart(2,"0");
-  const date=`${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()}`;
-  const time=`${pad(d.getHours())}${pad(d.getMinutes())}`;
-  return {date,time};
+/* Format helpers */
+function pad2(n){ return String(n).padStart(2,'0'); }
+function formatDateDDMMYYYY(d){
+  return `${pad2(d.getDate())}-${pad2(d.getMonth()+1)}-${d.getFullYear()}`;
+}
+function formatTimeHHMM(d){
+  return `${pad2(d.getHours())}${pad2(d.getMinutes())}`; // HHMM no colon
 }
 
-function addMinutes(timeStr,mins){
-  const d=parseDateTime(timeStr);
-  d.setMinutes(d.getMinutes()+mins);
-  return d;
+/* add minutes to Date and return new Date */
+function addMinutesToDate(date, mins){
+  return new Date(date.getTime() + mins*60000);
 }
 
-// Sample Data
-function loadSample(){
-  $('invigilators').value=['Alice','Bob','Chen','Deepa','Evan'].join('\n');
-  $('rooms').value=['Hall A','Hall B'].join('\n');
-  $('timeslots').value=['05-10-2025 0900','06-10-2025 1430'].join('\n');
+/* Parse rooms lines "Room name,number" -> array of {name, count} with validation */
+function parseRoomsLines(lines){
+  const rooms = [];
+  for(const raw of lines){
+    // split on last comma to allow commas in room names
+    const idx = raw.lastIndexOf(',');
+    let name, count;
+    if(idx === -1){
+      name = raw.trim();
+      count = 1;
+    } else {
+      name = raw.slice(0, idx).trim();
+      const numStr = raw.slice(idx+1).trim();
+      const parsed = parseInt(numStr,10);
+      if(!name) name = raw.trim(); // fallback
+      if(!isFinite(parsed) || parsed <= 0) count = 1;
+      else count = parsed;
+    }
+    if(!name) continue; // skip empty
+    rooms.push({name, count});
+  }
+  return rooms;
 }
-$('sampleBtn').addEventListener('click',loadSample);
 
-// Generate Timetable
-function generateTimetable(){
-  const invigilators=parseLines('invigilators');
-  const rooms=parseLines('rooms');
-  const slots=parseLines('timeslots');
-  const paperDur=parseInt($('paperDuration').value)||180;
-  const shiftLen=parseInt($('shiftLength').value)||90;
-  const avoidConsec=$('avoidConsecutive').checked;
-  const maxPer=parseInt($('maxPerInvigilator').value)||Infinity;
-  if(!invigilators.length||!rooms.length||!slots.length) return alert('Fill all lists.');
+/* Validate timeslots list, returns array of Date objects or errors */
+function parseTimeslots(lines){
+  const dates = [];
+  const errors = [];
+  for(const [i, line] of lines.entries()){
+    const d = parseDateTimeStrict(line);
+    if(!d) errors.push({lineNumber: i+1, text: line});
+    else dates.push(d);
+  }
+  return {dates, errors};
+}
 
-  // Generate shifts
-  let shifts=[];
-  for(const slot of slots){
-    let start=parseDateTime(slot);
-    let used=0;
-    while(used<paperDur){
-      let end=new Date(start.getTime());
-      end.setMinutes(end.getMinutes()+Math.min(shiftLen,paperDur-used));
-      let {date:ds,time:ts}=formatDateTime(start);
-      let {time:te}=formatDateTime(end);
-      shifts.push({date:ds,range:`${ts}–${te}`});
-      start=end;
-      used+=shiftLen;
+/* Generate shifts from start times (Date objects), paperDuration (min), shiftLen (min)
+   returns array of objects: {date: 'dd-mm-yyyy', range: 'HHMM–HHMM'}
+*/
+function generateShiftsFromSlots(dates, paperDuration, shiftLen){
+  const shifts = [];
+  for(const startDate of dates){
+    let used = 0;
+    let start = new Date(startDate);
+    while(used < paperDuration){
+      const duration = Math.min(shiftLen, paperDuration - used);
+      const end = addMinutesToDate(start, duration);
+      shifts.push({
+        date: formatDateDDMMYYYY(start),
+        range: `${formatTimeHHMM(start)}–${formatTimeHHMM(end)}`
+      });
+      start = end;
+      used += duration;
     }
   }
+  return shifts;
+}
 
-  // Assignment
-  let counts={}; invigilators.forEach(i=>counts[i]=0);
-  let table=shifts.map(()=>rooms.map(()=>''));  
-  let pointer=0;
-  for(let s=0;s<shifts.length;s++){
-    for(let r=0;r<rooms.length;r++){
-      let chosen=null;
-      for(let k=0;k<invigilators.length;k++){
-        let cand=invigilators[(pointer+k)%invigilators.length];
-        if(counts[cand]>=maxPer) continue;
-        if(avoidConsec && s>0){
-          if(table[s-1].includes(cand)) continue;
+/* Assignment algorithm:
+   - invigilators: array of names
+   - rooms: array of {name, count}
+   - shifts: array of {date, range}
+   - options: avoidConsec (bool), maxPer (number or Infinity)
+   Returns:
+     {
+       table: array (shifts) of arrays (rooms) of arrays (names assigned),
+       counts: {name:count}
+     }
+*/
+function assignInvigilators(invigilators, rooms, shifts, avoidConsec=true, maxPer=Infinity){
+  // initialize counts
+  const counts = {};
+  for(const i of invigilators) counts[i] = 0;
+
+  // Prepare table: shifts.length x rooms.length, each cell is an array
+  const table = shifts.map(()=>rooms.map(()=>[]));
+
+  // Helper: check if a candidate was assigned in previous shift (any room)
+  function wasAssignedInPrevShift(candidate, shiftIndex){
+    if(shiftIndex <= 0) return false;
+    for(const roomAssignments of table[shiftIndex-1]){
+      if(roomAssignments.includes(candidate)) return true;
+    }
+    return false;
+  }
+
+  // pointer rotation
+  let pointer = 0;
+  const Ninv = invigilators.length;
+
+  for(let s = 0; s < shifts.length; s++){
+    for(let r = 0; r < rooms.length; r++){
+      const need = rooms[r].count;
+      let assignedThisRoom = 0;
+      // For each slot in this room, pick a candidate
+      for(let slot = 0; slot < need; slot++){
+        let chosen = null;
+        let bestCandidate = null;
+        // try to find candidate respecting maxPer and avoidConsec
+        for(let k = 0; k < Ninv; k++){
+          const idx = (pointer + k) % Ninv;
+          const cand = invigilators[idx];
+          if(counts[cand] >= maxPer) continue; // skip if reached max
+          if(avoidConsec && wasAssignedInPrevShift(cand, s)) continue;
+          // also avoid duplicates in same room/shift (don't assign same person twice in same cell)
+          if(table[s][r].includes(cand)) continue;
+          chosen = cand;
+          break;
         }
-        chosen=cand; break;
-      }
-      if(!chosen) chosen=invigilators[pointer%invigilators.length];
-      table[s][r]=chosen;
-      counts[chosen]++;
-      pointer++;
-    }
-  }
-  renderTable(shifts,rooms,table);
-  window.lastGenerated={shifts,rooms,table,counts};
-}
-$('generateBtn').addEventListener('click',generateTimetable);
+        // If not found, relax avoidConsec constraint
+        if(!chosen){
+          for(let k = 0; k < Ninv; k++){
+            const idx = (pointer + k) % Ninv;
+            const cand = invigilators[idx];
+            if(counts[cand] >= maxPer) continue;
+            if(table[s][r].includes(cand)) continue;
+            chosen = cand;
+            break;
+          }
+        }
+        // If still not found (all reached max or all assigned), pick least-loaded overall (even if exceeds max)
+        if(!chosen){
+          let minCount = Infinity, minName = null;
+          for(const cand of invigilators){
+            if(table[s][r].includes(cand)) continue;
+            if(counts[cand] < minCount){ minCount = counts[cand]; minName = cand; }
+          }
+          chosen = minName;
+        }
 
-// Render Table
-function renderTable(shifts,rooms,table){
-  const tbl=$('timetable'); tbl.innerHTML='';
-  let thead='<tr><th class="border px-2 py-1 bg-slate-100">Date</th><th class="border px-2 py-1 bg-slate-100">Shift</th>';
-  for(const r of rooms) thead+=`<th class="border px-2 py-1 bg-slate-100">${r}</th>`;
-  thead+='</tr>';
-  tbl.innerHTML=thead;
+        // assign chosen (if any)
+        if(chosen){
+          table[s][r].push(chosen);
+          counts[chosen] = (counts[chosen] || 0) + 1;
+          // advance pointer to next candidate after chosen to improve fairness
+          const chosenIdx = invigilators.indexOf(chosen);
+          pointer = (chosenIdx + 1) % Ninv;
+          assignedThisRoom++;
+        } else {
+          // no candidates at all (empty invigilator list) -> leave blank
+          table[s][r].push('');
+        }
+      } // end room need loop
+    } // end rooms loop
+  } // end shifts loop
+
+  return {table, counts};
+}
+
+/* Render table to HTML; table is array of arrays (cells are arrays of names) */
+function renderTable(shifts, rooms, table){
+  const tbl = $('#timetable');
+  tbl.innerHTML = '';
+  // header
+  let thead = '<thead><tr class="bg-gray-100"><th class="border px-2 py-1">Date</th><th class="border px-2 py-1">Shift</th>';
+  for(const r of rooms){
+    thead += `<th class="border px-2 py-1">${escapeHtml(r.name)}</th>`;
+  }
+  thead += '</tr></thead>';
+  tbl.insertAdjacentHTML('beforeend', thead);
+
+  // body
+  const tbody = document.createElement('tbody');
   for(let i=0;i<shifts.length;i++){
-    let row=`<tr><td class="border px-2 py-1">${shifts[i].date}</td><td class="border px-2 py-1">${shifts[i].range}</td>`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="border px-2 py-1">${escapeHtml(shifts[i].date)}</td><td class="border px-2 py-1">${escapeHtml(shifts[i].range)}</td>`;
     for(let j=0;j<rooms.length;j++){
-      row+=`<td class="border px-2 py-1">${table[i][j]}</td>`;
+      const namesArr = table[i][j] || [];
+      const cellText = namesArr.filter(Boolean).join(', ');
+      const td = document.createElement('td');
+      td.className = 'border px-2 py-1 align-top';
+      td.textContent = cellText;
+      tr.appendChild(td);
     }
-    row+='</tr>';
-    tbl.innerHTML+=row;
+    tbody.appendChild(tr);
   }
+  tbl.appendChild(tbody);
 }
 
-// Balance
-$('balanceBtn').addEventListener('click',()=>{
-  if(!window.lastGenerated) return;
-  let c=window.lastGenerated.counts;
-  $('countsArea').innerHTML=Object.entries(c).map(([k,v])=>`${k}: ${v}`).join('<br>');
+/* Escape HTML for safety */
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+
+/* Build CSV row with quoting */
+function csvQuote(s){
+  if(s === null || s === undefined) return '""';
+  const str = String(s);
+  return `"${str.replace(/"/g,'""')}"`;
+}
+
+/* Event handlers */
+$('#sampleBtn').addEventListener('click', ()=>{
+  $('#invigilators').value = ['Alice','Bob','Chen','Deepa','Evan','Fatima','George','Hannah'].join('\n');
+  $('#rooms').value = ['Hall A,3','Hall B,2','Lab 1,1'].join('\n');
+  $('#timeslots').value = ['05-10-2025 0900','06-10-2025 1400'].join('\n');
+  $('#paperDuration').value = 180;
+  $('#shiftLength').value = 90;
+  $('#maxPerInvigilator').value = '';
+  $('#avoidConsecutive').checked = true;
 });
 
-// Excel Export
-$('exportBtn').addEventListener('click',()=>{
-  if(!window.lastGenerated) return;
-  const {shifts,rooms,table}=window.lastGenerated;
-  const wsData=[['Date','Shift',...rooms]];
-  for(let i=0;i<shifts.length;i++) wsData.push([shifts[i].date,shifts[i].range,...table[i]]);
-  const wb=XLSX.utils.book_new();
-  const ws=XLSX.utils.aoa_to_sheet(wsData);
-  XLSX.utils.book_append_sheet(wb,ws,'Invigilation');
-  XLSX.writeFile(wb,'invigilation.xlsx');
+$('#clearBtn').addEventListener('click', ()=>{
+  $('#timetable').innerHTML = '';
+  $('#countsArea').innerHTML = '';
+  window.lastGenerated = null;
 });
 
-// CSV Export
-$('downloadCSVBtn').addEventListener('click',()=>{
-  if(!window.lastGenerated) return;
-  const {shifts,rooms,table}=window.lastGenerated;
-  let lines=[['Date','Shift',...rooms].join(',')];
-  for(let i=0;i<shifts.length;i++) lines.push([shifts[i].date,shifts[i].range,...table[i]].join(','));
-  const blob=new Blob([lines.join('\n')],{type:'text/csv'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download='invigilation.csv';
-  a.click(); URL.revokeObjectURL(url);
+/* Main generate */
+$('#generateBtn').addEventListener('click', ()=>{
+  // parse invigilators
+  const invigilators = parseLines('invigilators');
+  if(invigilators.length === 0) return alert('Enter at least one invigilator.');
+
+  // parse rooms
+  const rawRoomLines = parseLines('rooms');
+  if(rawRoomLines.length === 0) return alert('Enter at least one room (Room name,number).');
+  const rooms = parseRoomsLines(rawRoomLines);
+
+  // parse timeslots with strict validation
+  const timeslotLines = parseLines('timeslots');
+  if(timeslotLines.length === 0) return alert('Enter at least one timeslot (dd-mm-yyyy HHMM).');
+  const {dates, errors} = parseTimeslots(timeslotLines);
+  if(errors.length > 0){
+    const sample = errors.slice(0,3).map(e => `Line ${e.lineNumber}: "${e.text}"`).join('\n');
+    return alert(`Invalid timeslot format detected (expected dd-mm-yyyy HHMM). First few errors:\n${sample}\n\nPlease fix and try again.`);
+  }
+
+  // parse numeric options
+  const paperDuration = Math.max(1, parseInt($('#paperDuration').value,10) || 180);
+  const shiftLength = Math.max(1, parseInt($('#shiftLength').value,10) || 90);
+  let maxPerRaw = $('#maxPerInvigilator').value.trim();
+  let maxPer = Infinity;
+  if(maxPerRaw !== ''){
+    const parsed = parseInt(maxPerRaw,10);
+    if(isFinite(parsed) && parsed > 0) maxPer = parsed;
+    else { alert('Invalid max per invigilator — using no limit.'); maxPer = Infinity; }
+  }
+
+  const avoidConsec = $('#avoidConsecutive').checked;
+
+  // generate shifts
+  const shifts = generateShiftsFromSlots(dates, paperDuration, shiftLength);
+
+  // assign invigilators
+  const {table, counts} = assignInvigilators(invigilators, rooms, shifts, avoidConsec, maxPer);
+
+  // save and render
+  window.lastGenerated = {shifts, rooms, table, counts};
+  renderTable(shifts, rooms, table);
+  // show counts summary
+  $('#countsArea').innerHTML = Object.entries(counts).map(([k,v]) => `${escapeHtml(k)}: ${v}`).join('<br>');
+});
+
+/* Balance counts button */
+$('#balanceBtn').addEventListener('click', ()=>{
+  if(!window.lastGenerated) return alert('Generate a timetable first.');
+  const counts = window.lastGenerated.counts;
+  $('#countsArea').innerHTML = Object.entries(counts).map(([k,v]) => `${escapeHtml(k)}: ${v}`).join('<br>');
+});
+
+/* Excel export — writes Date, Shift, then room columns (cell strings are comma-separated names) */
+$('#exportBtn').addEventListener('click', ()=>{
+  if(!window.lastGenerated) return alert('Generate a timetable first.');
+  const {shifts, rooms, table} = window.lastGenerated;
+  const wsData = [];
+  // header
+  wsData.push(['Date', 'Shift', ...rooms.map(r => r.name)]);
+  for(let i=0;i<shifts.length;i++){
+    const row = [shifts[i].date, shifts[i].range];
+    for(let j=0;j<rooms.length;j++){
+      row.push((table[i][j] || []).filter(Boolean).join(', '));
+    }
+    wsData.push(row);
+  }
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  // set column widths: make Date 12, Shift 12, rooms wider
+  ws['!cols'] = [{wch:12},{wch:12}, ...rooms.map(()=>({wch:25}))];
+  XLSX.utils.book_append_sheet(wb, ws, 'Invigilation');
+  XLSX.writeFile(wb, 'invigilation-timetable.xlsx');
+});
+
+/* CSV export */
+$('#downloadCSVBtn').addEventListener('click', ()=>{
+  if(!window.lastGenerated) return alert('Generate a timetable first.');
+  const {shifts, rooms, table} = window.lastGenerated;
+  const header = ['Date','Shift', ...rooms.map(r => r.name)];
+  const lines = [header.map(csvQuote).join(',')];
+  for(let i=0;i<shifts.length;i++){
+    const row = [shifts[i].date, shifts[i].range];
+    for(let j=0;j<rooms.length;j++){
+      row.push((table[i][j] || []).filter(Boolean).join(', '));
+    }
+    lines.push(row.map(csvQuote).join(','));
+  }
+  const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'invigilation-timetable.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 });
 </script>
 </body>
