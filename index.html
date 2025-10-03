@@ -3,212 +3,152 @@
 <head>
   <meta charset="UTF-8">
   <title>Invigilation Timetable Generator</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100 p-6">
-  <div class="max-w-6xl mx-auto bg-white shadow p-6 rounded">
-    <h1 class="text-2xl font-bold mb-4">Invigilation Timetable Generator</h1>
+<body class="p-6 bg-gray-100">
+  <h1 class="text-2xl font-bold mb-4">Invigilation Timetable Generator</h1>
 
-    <!-- Input Section -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div>
-        <label class="font-semibold">Invigilators</label>
-        <textarea id="invigilators" class="w-full border p-2 h-40" placeholder="One per line"></textarea>
-      </div>
-      <div>
-        <label class="font-semibold">Rooms (format: RoomName,NumberOfInvigilators)</label>
-        <textarea id="rooms" class="w-full border p-2 h-40" placeholder="Hall A,3&#10;Hall B,2"></textarea>
-      </div>
-      <div>
-        <label class="font-semibold">Paper Timeslots</label>
-        <textarea id="timeslots" class="w-full border p-2 h-40" placeholder="Format: dd-mm-yyyy HHMM&#10;e.g. 05-10-2025 0900"></textarea>
-      </div>
+  <!-- Inputs -->
+  <div class="grid grid-cols-2 gap-4 mb-4">
+    <div>
+      <label class="block font-semibold">Date (dd-mm-yyyy)</label>
+      <input id="date" type="text" placeholder="05-10-2025" class="w-full border rounded p-2">
     </div>
-
-    <!-- Options -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-      <div>
-        <label class="font-semibold">Paper Duration (minutes)</label>
-        <input id="paperDuration" type="number" value="180" class="w-full border p-2">
-      </div>
-      <div>
-        <label class="font-semibold">Invigilator Shift Length (minutes)</label>
-        <input id="shiftLength" type="number" value="90" class="w-full border p-2">
-      </div>
-      <div>
-        <label class="font-semibold">Max Papers per Invigilator</label>
-        <input id="maxPerInvigilator" type="number" class="w-full border p-2" placeholder="Leave blank for no limit">
-      </div>
+    <div>
+      <label class="block font-semibold">Paper Start Time (HHMM 24h)</label>
+      <input id="startTime" type="text" placeholder="0900" class="w-full border rounded p-2">
     </div>
-
-    <div class="mt-4">
-      <label><input type="checkbox" id="avoidConsecutive" class="mr-2">Avoid consecutive shifts</label>
+    <div>
+      <label class="block font-semibold">Paper Duration (minutes)</label>
+      <input id="duration" type="number" placeholder="180" class="w-full border rounded p-2">
     </div>
-
-    <!-- Action Buttons -->
-    <div class="flex gap-2 mt-4 flex-wrap">
-      <button id="sampleBtn" class="bg-gray-300 px-4 py-2 rounded">Load Sample Data</button>
-      <button id="generateBtn" class="bg-blue-500 text-white px-4 py-2 rounded">Generate Timetable</button>
-      <button id="balanceBtn" class="bg-purple-500 text-white px-4 py-2 rounded">Check Balance</button>
-      <button id="exportBtn" class="bg-green-500 text-white px-4 py-2 rounded">Export Excel</button>
-      <button id="downloadCSVBtn" class="bg-yellow-500 text-white px-4 py-2 rounded">Export CSV</button>
-    </div>
-
-    <!-- Preview -->
-    <div class="mt-6">
-      <h2 class="text-xl font-semibold">Generated Timetable Preview</h2>
-      <table id="timetable" class="table-auto border-collapse border w-full mt-2"></table>
-    </div>
-
-    <!-- Balance -->
-    <div class="mt-6">
-      <h2 class="text-xl font-semibold">Invigilation Counts</h2>
-      <div id="countsArea" class="p-2 bg-gray-50 border mt-2"></div>
+    <div>
+      <label class="block font-semibold">Shift Length (minutes)</label>
+      <input id="shiftLength" type="number" placeholder="90" class="w-full border rounded p-2">
     </div>
   </div>
 
+  <div class="mb-4">
+    <label class="block font-semibold">Rooms (format: RoomName,Candidates,ExtraInvigilators)</label>
+    <textarea id="rooms" rows="3" placeholder="Hall A,200,2&#10;Hall B,80,0" class="w-full border rounded p-2"></textarea>
+  </div>
+
+  <div class="mb-4">
+    <label class="block font-semibold">Invigilators (comma separated)</label>
+    <textarea id="invigilators" rows="2" placeholder="Alice,Bob,Chen,Deepa,Evan,Farah,George,Hana,Irene,Jack" class="w-full border rounded p-2"></textarea>
+  </div>
+
+  <div class="flex gap-4 mb-6">
+    <button onclick="generateTimetable()" class="bg-blue-500 text-white px-4 py-2 rounded">Generate Timetable</button>
+    <button onclick="exportExcel()" class="bg-green-500 text-white px-4 py-2 rounded">Export to Excel</button>
+  </div>
+
+  <div id="output"></div>
+
 <script>
-document.addEventListener("DOMContentLoaded", function() {
-  const $ = id => document.getElementById(id);
+function formatTime(hhmm, addMinutes) {
+  let h = parseInt(hhmm.slice(0,2));
+  let m = parseInt(hhmm.slice(2));
+  let total = h * 60 + m + addMinutes;
+  let nh = Math.floor(total / 60) % 24;
+  let nm = total % 60;
+  return (nh < 10 ? "0" : "") + nh + (nm < 10 ? "0" : "") + nm;
+}
 
-  function parseLines(id) {
-    return $(id).value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+let lastSchedule = [];
+
+function generateTimetable() {
+  const date = document.getElementById("date").value.trim();
+  const startTime = document.getElementById("startTime").value.trim();
+  const duration = parseInt(document.getElementById("duration").value);
+  const shiftLength = parseInt(document.getElementById("shiftLength").value);
+  const rooms = document.getElementById("rooms").value.trim().split("\n").map(r => r.split(","));
+  const invigilators = document.getElementById("invigilators").value.trim().split(",").map(i => i.trim());
+
+  if (!date || !startTime || !duration || !shiftLength || rooms.length === 0 || invigilators.length === 0) {
+    alert("Please fill in all inputs.");
+    return;
   }
 
-  function parseDateTime(str) {
-    let [date,time] = str.split(" ");
-    if (!time) time="0000";
-    const [d,m,y] = date.split("-").map(Number);
-    const hh = parseInt(time.substring(0,2),10);
-    const mm = parseInt(time.substring(2,4),10);
-    return new Date(y,m-1,d,hh,mm);
-  }
+  const numShifts = Math.ceil(duration / shiftLength);
+  let schedule = [];
+  let invIndex = 0;
 
-  function formatDateTime(d) {
-    const pad=n=>String(n).padStart(2,"0");
-    const date=`${pad(d.getDate())}-${pad(d.getMonth()+1)}-${d.getFullYear()}`;
-    const time=`${pad(d.getHours())}${pad(d.getMinutes())}`;
-    return {date,time};
-  }
+  rooms.forEach(room => {
+    let name = room[0].trim();
+    let candidates = parseInt(room[1]);
+    let extra = parseInt(room[2] || "0");
+    let minInv = Math.ceil(candidates / 40);
+    let baseline = minInv + extra;
 
-  function loadSample() {
-    $('invigilators').value = ['Alice','Bob','Chen','Deepa','Evan'].join('\\n');
-    $('rooms').value = ['Hall A,3','Hall B,2'].join('\\n');
-    $('timeslots').value = ['05-10-2025 0900','06-10-2025 1430'].join('\\n');
-  }
-
-  function generateTimetable() {
-    const invigilators=parseLines('invigilators');
-    const roomLines=parseLines('rooms');
-    const slots=parseLines('timeslots');
-    const paperDur=parseInt($('paperDuration').value)||180;
-    const shiftLen=parseInt($('shiftLength').value)||90;
-    const avoidConsec=$('avoidConsecutive').checked;
-    const maxPer=parseInt($('maxPerInvigilator').value)||Infinity;
-
-    if(!invigilators.length||!roomLines.length||!slots.length) {
-      alert('Fill all lists.');
-      return;
+    // pick start/end team (fixed set)
+    let startEndTeam = [];
+    for (let i = 0; i < baseline; i++) {
+      startEndTeam.push(invigilators[(invIndex + i) % invigilators.length]);
     }
+    invIndex += baseline;
 
-    let rooms=roomLines.map(line=>{
-      let parts=line.split(',');
-      let name=parts[0].trim();
-      let num=(parts[1] && !isNaN(parts[1])) ? parseInt(parts[1]) : 1;
-      if(num<=0) num=1;
-      return {name, num};
-    });
+    for (let s = 0; s < numShifts; s++) {
+      let shiftStart = formatTime(startTime, s * shiftLength);
+      let shiftEnd = formatTime(startTime, (s+1) * shiftLength);
 
-    let shifts=[];
-    for(const slot of slots){
-      let start=parseDateTime(slot);
-      let used=0;
-      while(used<paperDur){
-        let end=new Date(start.getTime());
-        end.setMinutes(end.getMinutes()+Math.min(shiftLen,paperDur-used));
-        let {date:ds,time:ts}=formatDateTime(start);
-        let {time:te}=formatDateTime(end);
-        shifts.push({date:ds,range:`${ts}–${te}`});
-        start=end;
-        used+=shiftLen;
-      }
-    }
-
-    let counts={}; invigilators.forEach(i=>counts[i]=0);
-    let table=shifts.map(()=>rooms.map(()=>[]));
-
-    let pointer=0;
-    for(let s=0;s<shifts.length;s++){
-      for(let r=0;r<rooms.length;r++){
-        let needed=rooms[r].num;
-        for(let n=0;n<needed;n++){
-          let chosen=null;
-          for(let k=0;k<invigilators.length;k++){
-            let cand=invigilators[(pointer+k)%invigilators.length];
-            if(counts[cand]>=maxPer) continue;
-            if(avoidConsec && s>0){
-              if(table[s-1][r].includes(cand)) continue;
-            }
-            if(table[s][r].includes(cand)) continue;
-            chosen=cand; break;
-          }
-          if(!chosen) chosen=invigilators[pointer%invigilators.length];
-          table[s][r].push(chosen);
-          counts[chosen]++;
-          pointer++;
+      let team = [];
+      if (s === 0 || s === numShifts - 1) {
+        // start or end shift → full baseline team
+        team = [...startEndTeam];
+      } else {
+        // middle shift → rotate but ≥ minimum required
+        team = [];
+        for (let i = 0; i < minInv; i++) {
+          team.push(invigilators[(invIndex + i + s) % invigilators.length]);
         }
       }
+
+      schedule.push({
+        Date: date,
+        Time: shiftStart + "-" + shiftEnd,
+        Room: name,
+        Invigilators: team.join(", ")
+      });
     }
+  });
 
-    renderTable(shifts,rooms,table);
-    window.lastGenerated={shifts,rooms,table,counts};
+  lastSchedule = schedule;
+
+  // render
+  let html = `<table class="table-auto border-collapse border border-gray-400 w-full">
+                <thead>
+                  <tr class="bg-gray-200">
+                    <th class="border px-2">Date</th>
+                    <th class="border px-2">Time</th>
+                    <th class="border px-2">Room</th>
+                    <th class="border px-2">Invigilators</th>
+                  </tr>
+                </thead>
+                <tbody>`;
+  schedule.forEach(r => {
+    html += `<tr>
+               <td class="border px-2">${r.Date}</td>
+               <td class="border px-2">${r.Time}</td>
+               <td class="border px-2">${r.Room}</td>
+               <td class="border px-2">${r.Invigilators}</td>
+             </tr>`;
+  });
+  html += "</tbody></table>";
+  document.getElementById("output").innerHTML = html;
+}
+
+function exportExcel() {
+  if (lastSchedule.length === 0) {
+    alert("Please generate a timetable first.");
+    return;
   }
-
-  function renderTable(shifts,rooms,table){
-    const tbl=$('timetable'); tbl.innerHTML='';
-    let thead='<tr><th class="border px-2 py-1 bg-slate-100">Date</th><th class="border px-2 py-1 bg-slate-100">Shift</th>';
-    for(const r of rooms) thead+=`<th class="border px-2 py-1 bg-slate-100">${r.name}</th>`;
-    thead+='</tr>';
-    tbl.innerHTML=thead;
-    for(let i=0;i<shifts.length;i++){
-      let row=`<tr><td class="border px-2 py-1">${shifts[i].date}</td><td class="border px-2 py-1">${shifts[i].range}</td>`;
-      for(let j=0;j<rooms.length;j++){
-        row+=`<td class="border px-2 py-1">${table[i][j].join(", ")}</td>`;
-      }
-      row+='</tr>';
-      tbl.innerHTML+=row;
-    }
-  }
-
-  $('sampleBtn').addEventListener('click', loadSample);
-  $('generateBtn').addEventListener('click', generateTimetable);
-  $('balanceBtn').addEventListener('click', ()=>{
-    if(!window.lastGenerated) return;
-    let c=window.lastGenerated.counts;
-    $('countsArea').innerHTML=Object.entries(c).map(([k,v])=>`${k}: ${v}`).join('<br>');
-  });
-  $('exportBtn').addEventListener('click', ()=>{
-    if(!window.lastGenerated) return;
-    const {shifts,rooms,table}=window.lastGenerated;
-    const wsData=[['Date','Shift',...rooms.map(r=>r.name)]];
-    for(let i=0;i<shifts.length;i++) wsData.push([shifts[i].date,shifts[i].range,...table[i].map(x=>x.join(", "))]);
-    const wb=XLSX.utils.book_new();
-    const ws=XLSX.utils.aoa_to_sheet(wsData);
-    XLSX.utils.book_append_sheet(wb,ws,'Invigilation');
-    XLSX.writeFile(wb,'invigilation.xlsx');
-  });
-  $('downloadCSVBtn').addEventListener('click', ()=>{
-    if(!window.lastGenerated) return;
-    const {shifts,rooms,table}=window.lastGenerated;
-    let lines=[['Date','Shift',...rooms.map(r=>r.name)].join(',')];
-    for(let i=0;i<shifts.length;i++) lines.push([shifts[i].date,shifts[i].range,...table[i].map(x=>x.join(" "))].join(','));
-    const blob=new Blob([lines.join('\\n')],{type:'text/csv'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url; a.download='invigilation.csv'; a.click();
-    URL.revokeObjectURL(url);
-  });
-});
+  let ws = XLSX.utils.json_to_sheet(lastSchedule);
+  let wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Timetable");
+  XLSX.writeFile(wb, "InvigilationTimetable.xlsx");
+}
 </script>
 </body>
 </html>
