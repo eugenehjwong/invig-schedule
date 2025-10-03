@@ -82,7 +82,7 @@ function generateTimetable() {
     let minInv = Math.ceil(candidates / 40);
     let baseline = minInv + extra;
 
-    // pick start/end team (fixed set)
+    // Start/End fixed group
     let startEndTeam = [];
     for (let i = 0; i < baseline; i++) {
       startEndTeam.push(invigilators[(invIndex + i) % invigilators.length]);
@@ -92,13 +92,13 @@ function generateTimetable() {
     for (let s = 0; s < numShifts; s++) {
       let shiftStart = formatTime(startTime, s * shiftLength);
       let shiftEnd = formatTime(startTime, (s+1) * shiftLength);
-
       let team = [];
+
       if (s === 0 || s === numShifts - 1) {
-        // start or end shift → full baseline team
+        // Start and End → same fixed group
         team = [...startEndTeam];
       } else {
-        // middle shift → rotate but ≥ minimum required
+        // Middle → rotated group, but ≥ minInv
         team = [];
         for (let i = 0; i < minInv; i++) {
           team.push(invigilators[(invIndex + i + s) % invigilators.length]);
@@ -109,14 +109,14 @@ function generateTimetable() {
         Date: date,
         Time: shiftStart + "-" + shiftEnd,
         Room: name,
-        Invigilators: team.join(", ")
+        Invigilators: team
       });
     }
   });
 
   lastSchedule = schedule;
 
-  // render
+  // Render with line breaks
   let html = `<table class="table-auto border-collapse border border-gray-400 w-full">
                 <thead>
                   <tr class="bg-gray-200">
@@ -132,7 +132,7 @@ function generateTimetable() {
                <td class="border px-2">${r.Date}</td>
                <td class="border px-2">${r.Time}</td>
                <td class="border px-2">${r.Room}</td>
-               <td class="border px-2">${r.Invigilators}</td>
+               <td class="border px-2 whitespace-pre-line">${r.Invigilators.join("\n")}</td>
              </tr>`;
   });
   html += "</tbody></table>";
@@ -144,7 +144,14 @@ function exportExcel() {
     alert("Please generate a timetable first.");
     return;
   }
-  let ws = XLSX.utils.json_to_sheet(lastSchedule);
+  // convert invigilator arrays into newline-separated strings for Excel
+  let exportData = lastSchedule.map(r => ({
+    Date: r.Date,
+    Time: r.Time,
+    Room: r.Room,
+    Invigilators: r.Invigilators.join("\n")
+  }));
+  let ws = XLSX.utils.json_to_sheet(exportData);
   let wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Timetable");
   XLSX.writeFile(wb, "InvigilationTimetable.xlsx");
