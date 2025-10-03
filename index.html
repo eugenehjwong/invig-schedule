@@ -57,9 +57,11 @@ function parseTime(str) {
 }
 
 function formatTime(totalMin) {
-  let h = Math.floor(totalMin/60);
+  let h = Math.floor(totalMin / 60) % 24; // wrap hours around 24
   let m = totalMin % 60;
-  return (h<10?"0"+h:h) + (m<10?"0"+m:m);
+  let hh = h < 10 ? "0" + h : h;
+  let mm = m < 10 ? "0" + m : m;
+  return hh + mm;
 }
 
 let lastSchedule = [];
@@ -95,7 +97,7 @@ function generateTimetable() {
   let shifts = [];
   for(let i=0;i<numShifts;i++){
     let s = startMin + i*shiftLength;
-    let e = Math.min(s + shiftLength, examEnd); // fixed: last shift may be shorter
+    let e = Math.min(s + shiftLength, examEnd); // last shift may be shorter
     shifts.push({start:s, end:e});
   }
 
