@@ -14,13 +14,11 @@
   <div class="grid grid-cols-2 gap-4 mb-6">
     <div>
       <label class="block mb-1 font-semibold">Exam Date</label>
-      <input type="text" id="examDate" placeholder="dd-mm-yyyy"
-             class="border p-2 w-full rounded">
+      <input type="text" id="examDate" placeholder="dd-mm-yyyy" class="border p-2 w-full rounded">
     </div>
     <div>
       <label class="block mb-1 font-semibold">Exam Start Time</label>
-      <input type="text" id="examStart" placeholder="HHMM (24h, no colon)"
-             class="border p-2 w-full rounded">
+      <input type="text" id="examStart" placeholder="HHMM (24h, no colon)" class="border p-2 w-full rounded">
     </div>
     <div>
       <label class="block mb-1 font-semibold">Paper Duration (min)</label>
@@ -38,16 +36,14 @@
   </div>
 
   <div class="mb-6">
-    <label class="block mb-1 font-semibold">Rooms (format: Name,Candidates,Extras)</label>
+    <label class="block mb-1 font-semibold">Rooms (format: Name,Candidates)</label>
     <textarea id="rooms" rows="3" class="border p-2 w-full rounded"
-              placeholder="Hall A,200,2&#10;Hall B,80,0"></textarea>
+              placeholder="Hall A,200&#10;Hall B,80"></textarea>
   </div>
 
   <div class="flex space-x-4 mb-6">
-    <button onclick="generateTimetable()"
-            class="bg-blue-600 text-white px-4 py-2 rounded">Generate</button>
-    <button onclick="exportExcel()"
-            class="bg-green-600 text-white px-4 py-2 rounded">Export Excel</button>
+    <button onclick="generateTimetable()" class="bg-blue-600 text-white px-4 py-2 rounded">Generate</button>
+    <button onclick="exportExcel()" class="bg-green-600 text-white px-4 py-2 rounded">Export Excel</button>
   </div>
 
   <!-- Output -->
@@ -65,78 +61,104 @@ function formatTime(totalMin) {
   return (h<10?"0"+h:h) + (m<10?"0"+m:m);
 }
 
+let lastSchedule = [];
+
 function generateTimetable() {
   const date = document.getElementById("examDate").value.trim();
   const startTime = document.getElementById("examStart").value.trim();
   const examDuration = parseInt(document.getElementById("examDuration").value, 10);
   const shiftLength = parseInt(document.getElementById("shiftLength").value, 10);
-  const invigilators = document.getElementById("invigilators").value.split(",").map(x => x.trim()).filter(Boolean);
+  let invigilators = document.getElementById("invigilators").value.split(",").map(x=>x.trim()).filter(Boolean);
   const roomsInput = document.getElementById("rooms").value.trim().split("\n");
 
+  if (!date || !startTime || !examDuration || !shiftLength || invigilators.length === 0 || roomsInput.length === 0) {
+    alert("Please fill in all inputs.");
+    return;
+  }
+
+  // Prepare rooms
   let rooms = [];
   for (let line of roomsInput) {
-    let [name,cands,extra] = line.split(",");
-    if (!name) continue;
+    let [name,cands] = line.split(",");
+    if(!name) continue;
     let candidates = parseInt(cands,10)||0;
-    let extras = parseInt(extra,10)||0;
     let minReq = Math.ceil(candidates/40);
-    rooms.push({name:name.trim(), candidates, extras, minReq, baseline:minReq+extras});
+    let deployed = 2*minReq; // double minimum rule
+    rooms.push({name:name.trim(), candidates, minReq, deployed});
   }
 
-  let startMin = parseTime(startTime);
-  let numShifts = Math.ceil(examDuration/shiftLength);
+  // Calculate shifts
+  const startMin = parseTime(startTime);
+  const numShifts = Math.ceil(examDuration/shiftLength);
   let shifts = [];
-  for (let i=0;i<numShifts;i++) {
+  for(let i=0;i<numShifts;i++){
     let s = startMin + i*shiftLength;
     let e = Math.min(startMin + (i+1)*shiftLength, startMin+examDuration);
-    shifts.push({start:s, end:e});
+    shifts.push({start:s,end:e});
   }
 
+  // Assign invigilators
   let assignment = {};
-  rooms.forEach(r=>{
-    assignment[r.name] = Array(numShifts).fill(null).map(()=>[]);
-    // fixed start/end groups
-    let fixedTeam = invigilators.splice(0,r.baseline);
-    assignment[r.name][0] = [...fixedTeam]; 
-    assignment[r.name][numShifts-1] = [...fixedTeam];
+  let invIndex = 0; // tracks used invigilators from pool
 
-    // pool for middle rotation = remaining invigilators + fixed team (recycled)
-    let pool = [...invigilators, ...fixedTeam];
-    let index = 0;
-    for (let s=1;s<numShifts-1;s++) {
-      let group = [];
-      for (let k=0;k<r.minReq;k++) {
-        group.push(pool[index % pool.length]);
-        index++;
+  rooms.forEach(r=>{
+    assignment[r.name] = [];
+    // split pool for middle rotations
+    if(invigilators.length < r.deployed){
+      alert(`Not enough invigilators for ${r.name}. Need ${r.deployed}, have ${invigilators.length}.`);
+      return;
+    }
+    let fullTeam = invigilators.slice(invIndex, invIndex + r.deployed);
+    invIndex += r.deployed;
+    let groupA = fullTeam.slice(0,r.minReq);
+    let groupB = fullTeam.slice(r.minReq);
+
+    for(let s=0;s<numShifts;s++){
+      if(s===0 || s===numShifts-1){
+        // Start or End shift → full team
+        assignment[r.name].push([...fullTeam]);
+      } else {
+        // Middle shifts → alternate groupA/groupB
+        if((s-1)%2===0){
+          assignment[r.name].push([...groupA]);
+        } else {
+          assignment[r.name].push([...groupB]);
+        }
       }
-      assignment[r.name][s] = group;
     }
   });
 
-  // Render
+  lastSchedule = {rooms, shifts, assignment, date};
+
+  // Render table
   let table = "<table class='table-auto border-collapse border border-gray-400 w-full bg-white'>";
   table += "<thead><tr><th class='border px-2 py-1'>Date</th><th class='border px-2 py-1'>Time</th>";
-  rooms.forEach(r=>{table+="<th class='border px-2 py-1'>"+r.name+"</th>";});
+  rooms.forEach(r=>table+="<th class='border px-2 py-1'>"+r.name+"</th>");
   table+="</tr></thead><tbody>";
 
-  shifts.forEach((shift,i)=>{
+  for(let i=0;i<shifts.length;i++){
     table+="<tr><td class='border px-2 py-1'>"+date+"</td>";
-    table+="<td class='border px-2 py-1'>"+formatTime(shift.start)+"-"+formatTime(shift.end)+"</td>";
+    table+="<td class='border px-2 py-1'>"+formatTime(shifts[i].start)+"-"+formatTime(shifts[i].end)+"</td>";
     rooms.forEach(r=>{
-      let names = assignment[r.name][i].join("<br>");
-      table+="<td class='border px-2 py-1 align-top'>"+names+"</td>";
+      table+="<td class='border px-2 py-1 whitespace-pre-line'>"+assignment[r.name][i].join("<br>")+"</td>";
     });
     table+="</tr>";
-  });
-
+  }
   table+="</tbody></table>";
-  document.getElementById("output").innerHTML=table;
+  document.getElementById("output").innerHTML = table;
 }
 
 function exportExcel() {
+  if(!lastSchedule){
+    alert("Generate timetable first!");
+    return;
+  }
   const table = document.querySelector("#output table");
-  if (!table) {alert("Generate timetable first!");return;}
-  const wb = XLSX.utils.table_to_book(table, {sheet:"Timetable"});
+  if(!table){
+    alert("Generate timetable first!");
+    return;
+  }
+  const wb = XLSX.utils.table_to_book(table,{sheet:"Timetable"});
   XLSX.writeFile(wb,"invigilation_timetable.xlsx");
 }
 </script>
